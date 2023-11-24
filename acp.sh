@@ -11,6 +11,8 @@
 declare -A colors;
 colors['ZERO']='\x1B[0m'
 colors['UNDERLINE']='\x1B[4m'
+colors['URL']='\033[38;5;220m'
+colors['URL_ADDR']='\033[38;5;248m'
 colors['ALIAS_ADDED']='\x1B[33m'
 colors['LIST_OF_BRANCHES']='\x1B[38;5;63m'
 colors['BRANCH_HEAD']='\x1B[38;5;30m'
@@ -45,6 +47,9 @@ git add .
 
 # ========== If directory is a git repo ==========
 if [ $? -eq 0 ]; then
+
+    # ========== Repo URL ==========
+    echo -e "\n${colors['URL']}${colors['UNDERLINE']}Repository URL${colors['ZERO']}: ${colors['URL_ADDR']}$(git remote get-url origin)"
 
     # ========== Local branches ==========
     current_branch=$(git branch --show-current)
