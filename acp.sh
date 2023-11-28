@@ -85,27 +85,29 @@ if [ $? -eq 0 ]; then
             echo -e "${colors['CHECKOUT']}"
             git checkout -b $new_branch
         fi
+    else
+        new_branch=$current_branch
     fi
     echo -e -n "\n${colors['ENTER_COMMIT']}Enter the commit message: ${colors['ZERO']}"; read commit_message
     echo -e "${colors['COMMIT_INFO']}"
     git commit -m "$commit_message"
     if [ $? -eq 0 ]; then
-        git rev-parse --abbrev-ref --symbolic-full-name $current_branch@{upstream} > /dev/null
+        git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null
         if [ $? -eq 0 ]; then
             echo -e "\n${colors['PUSHING']}Pushing. . .${colors['ZERO']}"
             git push
         else
-            echo -e "\n${colors['PUSH_BRANCH']}Branch: ${colors['BRANCH_HEAD']}${current_branch}${colors['PUSH_BRANCH']} has no upstream remote branch. \n${colors['PUSHING']}Pushing with setting the upstream. . .${colors['ZERO']}"
-            git push --set-upstream origin $current_branch
+            echo -e "\n${colors['PUSH_BRANCH']}Branch: ${colors['BRANCH_HEAD']}${new_branch}${colors['PUSH_BRANCH']} has no upstream remote branch. \n${colors['PUSHING']}Pushing with setting the upstream. . .${colors['ZERO']}"
+            git push --set-upstream origin $new_branch
         fi
     elif [ $? -eq 1 ]; then
-        git rev-parse --abbrev-ref --symbolic-full-name $current_branch@{upstream} > /dev/null
+        git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null
         if [ $? -eq 0 ]; then
             echo -e "\n${colors['PUSHING']}Pushing previous commit. . .${colors['ZERO']}"
             git push
         else
-            echo -e "\n${colors['PUSH_BRANCH']}Branch: ${colors['BRANCH_HEAD']}${current_branch}${colors['PUSH_BRANCH']} has no upstream remote branch. \n${colors['PUSHING']}Pushing previous commit with setting the remote upstream. . .${colors['ZERO']}"
-            git push --set-upstream origin $current_branch
+            echo -e "\n${colors['PUSH_BRANCH']}Branch: ${colors['BRANCH_HEAD']}${new_branch}${colors['PUSH_BRANCH']} has no upstream remote branch. \n${colors['PUSHING']}Pushing previous commit with setting the remote upstream. . .${colors['ZERO']}"
+            git push --set-upstream origin $new_branch
         fi
     else
         echo ''
