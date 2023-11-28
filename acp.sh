@@ -92,7 +92,7 @@ if [ $? -eq 0 ]; then
     if [ $? -eq 0 ]; then
         git rev-parse --abbrev-ref --symbolic-full-name $current_branch@{upstream} > /dev/null
         if [ $? -eq 0 ]; then
-            echo -e '\n${colors['PUSHING']}Pushing. . .${colors['ZERO']}'
+            echo -e "\n${colors['PUSHING']}Pushing. . .${colors['ZERO']}"
             git push
         else
             echo -e "\n${colors['PUSH_BRANCH']}Branch: ${colors['BRANCH_HEAD']}${current_branch}${colors['PUSH_BRANCH']} has no upstream remote branch. \n${colors['PUSHING']}Pushing with setting the upstream. . .${colors['ZERO']}"
