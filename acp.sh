@@ -32,7 +32,7 @@ if [ $# -gt 0 ]; then
     if [ "$1" == "--init" ]; then
         SDIR=$(dirname -- "$( readlink -f -- "$0"; )";)/acp.sh
         echo "alias acp='bash $SDIR && cd \$(pwd)'" >> /home/$USER/.bashrc
-        echo -e "${colors['ALIAS_ADDED']}\nAlias to this script added. From now just use 'acp' command in your git repo location.\${colors['ZERO']}\n"
+        echo -e "${colors['ALIAS_ADDED']}\nAlias to this script added. From now just use 'acp' command in your git repo location.${colors['ZERO']}\n"
         exit
     else
         echo "Invalid argument, use --init to initialize the script."
