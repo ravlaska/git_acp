@@ -25,7 +25,7 @@ push_pass_check() {
             exit
         # There is a password to enter -> handling password
         else
-            echo -e "\nThis repo is password protected!"
+            echo -e "${colors['PASS_PROTECTED']}\nThis repo is password protected!${colors['ZERO']}"
             pass_prompt
             # azure check
             if [[ "$repo_to_clone" == *"dev.azure"* ]]; then
@@ -44,10 +44,10 @@ push_pass_check() {
                             echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
                             create_and_validate_azure
                         fi
-                    else
-                        echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                        create_and_validate_azure
-                    fi
+                else
+                    echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
+                    create_and_validate_azure
+                fi
             fi # github check
             if [[ "$repo_to_clone" == *"github"* ]]; then
                 domain="${repo_to_clone#https://}" # extracting domain name
@@ -226,6 +226,7 @@ colors['PASSBASE']='\033[38;5;72m'
 colors['PROVIDE_TOKEN']='\033[38;5;215m'
 colors['PROVIDE_TOKEN_HIGH']='\033[38;5;211m'
 colors['ERROR_TOKEN']='\033[38;5;196m'
+colors['PASS_PROTECTED']='\033[38;5;161m'
 
 # ========== Script initialization (adding alias) ==========
 if [ $# -gt 0 ]; then
@@ -345,6 +346,7 @@ else
     if [ -z "$repo_to_clone" ]; then
         exit
     fi
+    original_address=$repo_to_clone # rewrite og address
     # ========== If repo URL for cloning entered ==========
     echo -e "${colors['ZERO']}"
     # Validating repo URL v1
@@ -367,6 +369,7 @@ else
                 domain="${repo_to_clone#https://}" # extracting domain name
                 domain=${domain%.git} # remove .git from end of string
                 domain="@$domain" # adjusting domain name
+                repo_name="${domain##*/}"
 
                 # if AUTO_TOKEN ON
                 if [ $AUTO_TOKEN -eq 1 ]; then
@@ -398,9 +401,11 @@ else
                 # adjusting azure link
                 if [[ "$repo_to_clone" == *"@dev.azure"* ]]; then
                     domain=$(echo "$repo_to_clone" | sed 's/.*@dev\.azure\.com/@dev.azure.com/') # extracting domain name
+                    repo_name="${domain##*/}"
                 else
                     domain="${repo_to_clone#https://}" # extracting domain name
                     domain="@$domain"
+                    repo_name="${domain##*/}"
                 fi
 
                 # if AUTO_TOKEN ON
@@ -430,6 +435,7 @@ else
     # Final cloning repo with adjusted link
     echo -e "${colors['URL_ADDR']}"
     git clone $repo_to_clone
+    git -C "$repo_name" remote set-url origin $original_address # rewrite repo URL for safety reasons
     echo -e "${colors['ZERO']}"
     exit
 fi
