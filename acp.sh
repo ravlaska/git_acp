@@ -8,7 +8,7 @@
 #
 
 AUTO_TOKEN=1;
-HIDE_TOKEN=1;
+HIDE_TOKEN=0;
 PASS_BASE_FILE=$(dirname -- "$( readlink -f -- "$0"; )";)/.pass_base;
 
 # ========== Functions ==========
@@ -319,7 +319,9 @@ if [ $? -eq 0 ]; then
     echo -e -n "\n${colors['ENTER_COMMIT']}Enter the commit message: ${colors['ZERO']}"; read commit_message
     echo -e "${colors['COMMIT_INFO']}"
     git commit -m "$commit_message" # commit changes
-    push_pass_check # check if there is a password to push repo
+    if [ $AUTO_TOKEN -eq 1 ]; then
+        push_pass_check # check if there is a password to push repo
+    fi
     if [ $? -eq 0 ]; then # if there is a new commit to push
         git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null # checking if repo has a remote branch for current local branch
         if [ $? -eq 0 ]; then
