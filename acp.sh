@@ -8,9 +8,54 @@
 #
 
 AUTO_TOKEN=1;
+HIDE_TOKEN=1;
 PASS_BASE_FILE=$(dirname -- "$( readlink -f -- "$0"; )";)/.pass_base;
 
 # ========== Functions ==========
+
+# initialization
+init_config() {
+    SDIR=$(dirname -- "$( readlink -f -- "$0"; )";)/acp.sh # taking current script location
+    echo "alias acp='bash $SDIR && cd \$(pwd)'" >> /home/$USER/.bashrc # creating alias in system (.bashrc file)
+    echo -e "${colors['ALIAS_ADDED']}\nAlias to this script added. From now just use 'acp' command in your git repo location.${colors['ZERO']}\n"
+    sleep 2
+    while true; do
+    echo -en "${colors['INIT_QUEST']}Do you want to store PAT tokens automatically in the encrypted Pass-Base file? (y/n): ${colors['ZERO']}"; read auto_token_cfg
+    if [ "${auto_token_cfg,,}" == "y" ]; then
+        sed -i '0,/AUTO_TOKEN=1/s/AUTO_TOKEN=1/AUTO_TOKEN=1/' "$0"
+        echo -e "${colors['INIT_OPTION']}Automatic PAT token storing turned ON.\nPass-Base file will be created in next script run.\nIf you have old '.pass_base' file you can paste it here.${colors['ZERO']}"
+        sleep 2
+        break
+    elif [ "${auto_token_cfg,,}" == "n" ]; then
+        sed -i '0,/AUTO_TOKEN=1/s/AUTO_TOKEN=1/AUTO_TOKEN=0/' "$0"
+        echo -e "${colors['INIT_OPTION']}Automatic PAT token storing turned OFF.${colors['ZERO']}"
+        sleep 2
+        break
+    else
+        echo -e "Select a valid option.\n"
+        sleep 2
+    fi
+    done
+    while true; do
+    echo -en "\n${colors['INIT_QUEST']}Do you want to hide PAT token in cloned repositories? (y/n) \nTurning ON recommended (better security), but you will need provide password to the Pass-Base each time you want to push something: ${colors['ZERO']}"; read hide_token_cfg
+    if [ "${hide_token_cfg,,}" == "y" ]; then
+        sed -i '0,/HIDE_TOKEN=1/s/HIDE_TOKEN=1/HIDE_TOKEN=1/' "$0"
+        echo -e "${colors['INIT_OPTION']}Hiding PAT token turned ON.${colors['ZERO']}"
+        sleep 2
+        break
+    elif [ "${hide_token_cfg,,}" == "n" ]; then
+        sed -i '0,/HIDE_TOKEN=1/s/HIDE_TOKEN=1/HIDE_TOKEN=0/' "$0"
+        echo -e "${colors['INIT_OPTION']}Hiding PAT token turned OFF.${colors['ZERO']}"
+        sleep 2
+        break
+    else
+        echo -e "Select a valid option.\n"
+        sleep 2
+    fi
+    done
+    echo -e "\n${colors['INIT_DONE']}Done.${colors['ZERO']}\n"
+    exit
+}
 
 # checking pass for pushing
 push_pass_check() {
@@ -42,11 +87,11 @@ push_pass_check() {
                         validate_repo # check if password is ok
                         if [ $ret_check -ne 0 ]; then
                             echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                            create_and_validate_azure
+                            create_and_validate "azure"
                         fi
                 else
                     echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                    create_and_validate_azure
+                    create_and_validate "azure"
                 fi
             fi # github check
             if [[ "$repo_to_clone" == *"github"* ]]; then
@@ -60,11 +105,11 @@ push_pass_check() {
                     if [ $ret_check -ne 0 ]; then
                         echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
                         echo $check
-                        create_and_validate_github
+                        create_and_validate "github"
                     fi
                 else
                     echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                    create_and_validate_github
+                    create_and_validate "github"
                 fi
             fi
         fi
@@ -121,50 +166,30 @@ decrypt_pass() {
     fi
 }
 
-# creating new entry in pass-base for azure
-create_pass_azure() {
-    decrypt_pass
-    echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
-    echo -e "\n${colors['ZERO']}"
-    updated_pbase="$depbasepass\n($1) : [$new_pass]"
-    encrypt_pass "$updated_pbase"   
-}
-
-# create pass and validate it azure
-create_and_validate_azure() {
-    create_pass_azure $domain
-    repo_to_clone="https://$new_pass$domain"
-    validate_repo # check if password is ok
-    if [ $ret_check -ne 0 ]; then
-        echo -en "${colors['ERROR_TOKEN']}Token is not working.${colors['ZERO']}\n"
-        delete_pass $domain
-        exit
+# create and validate token entry
+create_and_validate() {
+    # entry creation
+    decrypt_pass # decrypting pass-base
+    if [ "$1" == "github" ]; then # github case
+        echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}username${colors['ZERO']}: ${colors['URL_ADDR']}"; read new_user
+        echo -en "${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
+        echo -e "\n${colors['ZERO']}"
+        updated_pbase="$depbasepass\n($1) : [$new_user:$new_pass]"
+    elif [ "$1" == "azure" ]; then # azure case
+        echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
+        echo -e "\n${colors['ZERO']}"
+        updated_pbase="$depbasepass\n($1) : [$new_pass]"
     fi
+    encrypt_pass "$updated_pbase" # encrypting pass-base with new entry
+
+    # token validation
     repo_to_clone="https://$new_pass$domain" # adjusting repo link
-}
-
-# creating new entry in pass-base for github
-create_pass_gh() {
-    decrypt_pass
-    echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}username${colors['ZERO']}: ${colors['URL_ADDR']}"; read new_user
-    echo -en "${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
-    new_pass_gh="$new_user:$new_pass"
-    echo -e "\n${colors['ZERO']}"
-    updated_pbase="$depbasepass\n($1) : [$new_pass_gh]"
-    encrypt_pass "$updated_pbase"
-}
-
-# create pass and validate it github
-create_and_validate_github() {
-    create_pass_gh $domain
-    repo_to_clone="https://$new_pass_gh$domain"
     validate_repo # check if password is ok
     if [ $ret_check -ne 0 ]; then
         echo -en "${colors['ERROR_TOKEN']}Token is not working.${colors['ZERO']}\n"
         delete_pass $domain
         exit
     fi
-    repo_to_clone="https://$new_pass_gh$domain" # adjusting repo link
 }
 
 # remove specific record from pass-base
@@ -175,7 +200,7 @@ delete_pass() {
     encrypt_pass "$depbasepass"
 }
 
-# checking if password for specified address exists if so use it
+# checking if token for specified address exists if so use it
 check_pass() {
     decrypt_pass
     adjusted_search_domain=$(echo "$1" | sed 's/[./]/\\&/g')
@@ -227,31 +252,14 @@ colors['PROVIDE_TOKEN']='\033[38;5;215m'
 colors['PROVIDE_TOKEN_HIGH']='\033[38;5;211m'
 colors['ERROR_TOKEN']='\033[38;5;196m'
 colors['PASS_PROTECTED']='\033[38;5;161m'
+colors['INIT_DONE']='\033[38;5;71m'
+colors['INIT_OPTION']='\033[38;5;72m'
+colors['INIT_QUEST']='\033[38;5;110m'
 
 # ========== Script initialization (adding alias) ==========
 if [ $# -gt 0 ]; then
     if [ "$1" == "--init" ]; then
-        SDIR=$(dirname -- "$( readlink -f -- "$0"; )";)/acp.sh # taking current script location
-        echo "alias acp='bash $SDIR && cd \$(pwd)'" >> /home/$USER/.bashrc # creating alias in system (.bashrc file)
-        echo -e "${colors['ALIAS_ADDED']}\nAlias to this script added. From now just use 'acp' command in your git repo location.${colors['ZERO']}\n"
-        sleep 2
-        while true; do
-        echo -en "Do you want to store PAT tokens automatically? (y/n)"; read auto_token_cfg
-        if [ "${auto_token_cfg,,}" == "y" ]; then
-            sed -i 's/AUTO_TOKEN=1/AUTO_TOKEN=1/' "$0"
-            echo -e "Automatic PAT token storing turned ON.\nPass-Base file will be created in next script run.\nIf you have old '.pass_base' file you can paste it here."
-            sleep 2
-            break
-        elif [ "${auto_token_cfg,,}" == "n" ]; then
-            echo -e "Automatic PAT token storing turned OFF."
-            sleep 2
-            break
-        else
-            echo -e "Select a valid option."
-            sleep 2
-        fi
-        done
-        exit
+        init_config
     else
         echo "Invalid argument, use --init to initialize the script."
         exit
@@ -261,8 +269,6 @@ fi
 if [ "$AUTO_TOKEN" -eq 1 ]; then
     check_passbase_file
 fi
-
-# RET=$(git add . 2>&1)
 
 # ========== Git add all files in directory ==========
 git add . > /dev/null 2>&1 # trying to git add files
@@ -292,7 +298,7 @@ if [ $? -eq 0 ]; then
 
     # ========== Branch selection ==========
     echo -e "\n${colors['SELECTED_BRANCH']}${colors['UNDERLINE']}Selected branch${colors['ZERO']}: ${colors['BRANCH_HEAD']}${colors['SELECTED_BRANCH_NAME']}${current_branch}${colors['ZERO']}\n"
-    echo -e -n "${colors['BRANCH_INFORMATION']}Type branchname to ${colors['BRANCH_INFO_HIGHL']}[create new] ${colors['BRANCH_INFORMATION']}/${colors['BRANCH_INFO_HIGHL']} [select existing]${colors['BRANCH_INFORMATION']} branch, press ${colors['BRANCH_INFO_HIGHL']}<ENTER>${colors['BRANCH_INFORMATION']} to stay at the current branch.${colors['ZERO']}\n:"; read new_branch
+    echo -e -n "${colors['BRANCH_INFORMATION']}Type branch name to ${colors['BRANCH_INFO_HIGHL']}[create new] ${colors['BRANCH_INFORMATION']}/${colors['BRANCH_INFO_HIGHL']} [select existing]${colors['BRANCH_INFORMATION']} branch, press ${colors['BRANCH_INFO_HIGHL']}<ENTER>${colors['BRANCH_INFORMATION']} to stay at the current branch.${colors['ZERO']}\n:"; read new_branch
     if [ -n "$new_branch" ]; then # new_branch not empty - handle new branch creation
         skip_checkout=0
         for element in "${local_branches[@]}"; do 
@@ -380,11 +386,11 @@ else
                         validate_repo # check if password is ok
                         if [ $ret_check -ne 0 ]; then
                             echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                            create_and_validate_github
+                            create_and_validate "github"
                         fi
                     else
                         echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                        create_and_validate_github
+                        create_and_validate "github"
                     fi
                 else
                 # if AUTO_TOKEN OFF
@@ -418,11 +424,11 @@ else
                         validate_repo # check if password is ok
                         if [ $ret_check -ne 0 ]; then
                             echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                            create_and_validate_azure
+                            create_and_validate "azure"
                         fi
                     else
                         echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                        create_and_validate_azure
+                        create_and_validate "azure"
                     fi
                 else
                 # if AUTO_TOKEN OFF
@@ -433,9 +439,23 @@ else
         fi # if there is not password for repo just clone repo below
     fi
     # Final cloning repo with adjusted link
+    # selecting branch
+    remote_branches=($(git ls-remote --heads -h $repo_to_clone | awk '{print $2}' | sed 's|refs/heads/||'))
+    items_per_column=$(((${#remote_branches[@]} + 1) / 2))
+    echo -e "\n${colors['LIST_OF_BRANCHES']}${colors['UNDERLINE']}List of remote branches${colors['ZERO']}:${colors['BRANCH_HEAD']}"
+    printf "%-50s" "${remote_branches[0]}${remote_branches[1]}${remote_branches[2]}"
+    echo -e "${colors['BRANCH_REMOTE']}"; printf "%-50s %-50s\n" "${remote_branches[@]:3}" "${remote_branchess[@]:items_per_column + 3}"; echo -e "${colors['ZERO']}"
+    echo -en "Press <ENTER> for clone whole repo or type single branch to clone: "; read branch_to_clone
+    # cloning repo
     echo -e "${colors['URL_ADDR']}"
-    git clone $repo_to_clone
-    git -C "$repo_name" remote set-url origin $original_address # rewrite repo URL for safety reasons
+    if [ -n "$branch_to_clone" ]; then
+        git clone $repo_to_clone --branch $branch_to_clone
+    else
+        git clone $repo_to_clone
+    fi
+    if [ "$HIDE_TOKEN" -eq 1 ]; then
+        git -C "$repo_name" remote set-url origin $original_address # rewrite repo URL for safety reasons
+    fi
     echo -e "${colors['ZERO']}"
     exit
 fi
