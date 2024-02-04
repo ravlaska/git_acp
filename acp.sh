@@ -8,7 +8,7 @@
 #
 
 AUTO_TOKEN=1;
-HIDE_TOKEN=0;
+HIDE_TOKEN=1;
 PASS_BASE_FILE=$(dirname -- "$( readlink -f -- "$0"; )";)/.pass_base;
 
 # ========== Functions ==========
@@ -16,18 +16,21 @@ PASS_BASE_FILE=$(dirname -- "$( readlink -f -- "$0"; )";)/.pass_base;
 # initialization
 init_config() {
     SDIR=$(dirname -- "$( readlink -f -- "$0"; )";)/acp.sh # taking current script location
-    echo "alias acp='bash $SDIR && cd \$(pwd)'" >> /home/$USER/.bashrc # creating alias in system (.bashrc file)
+    # creating alias in system (.bashrc file) if its not already created
+    if ! grep -q "alias acp='bash $SDIR && cd \$(pwd)'" /home/$USER/.bashrc; then
+        echo "alias acp='bash $SDIR && cd \$(pwd)'" >> /home/$USER/.bashrc
+    fi
     echo -e "${colors['ALIAS_ADDED']}\nAlias to this script added. From now just use 'acp' command in your git repo location.${colors['ZERO']}\n"
     sleep 2
     while true; do
     echo -en "${colors['INIT_QUEST']}Do you want to store PAT tokens automatically in the encrypted Pass-Base file? (y/n): ${colors['ZERO']}"; read auto_token_cfg
     if [ "${auto_token_cfg,,}" == "y" ]; then
-        sed -i '0,/AUTO_TOKEN=1/s/AUTO_TOKEN=1/AUTO_TOKEN=1/' "$0"
+        sed -i '0,/AUTO_TOKEN=[0-9]/s/AUTO_TOKEN=0/AUTO_TOKEN=1/' "$0"
         echo -e "${colors['INIT_OPTION']}Automatic PAT token storing turned ON.\nPass-Base file will be created in next script run.\nIf you have old '.pass_base' file you can paste it here.${colors['ZERO']}"
         sleep 2
         break
     elif [ "${auto_token_cfg,,}" == "n" ]; then
-        sed -i '0,/AUTO_TOKEN=1/s/AUTO_TOKEN=1/AUTO_TOKEN=0/' "$0"
+        sed -i '0,/AUTO_TOKEN=[0-9]/s/AUTO_TOKEN=1/AUTO_TOKEN=0/' "$0"
         echo -e "${colors['INIT_OPTION']}Automatic PAT token storing turned OFF.${colors['ZERO']}"
         sleep 2
         break
@@ -39,12 +42,12 @@ init_config() {
     while true; do
     echo -en "\n${colors['INIT_QUEST']}Do you want to hide PAT token in cloned repositories? (y/n) \nTurning ON recommended (better security), but you will need provide password to the Pass-Base each time you want to push something: ${colors['ZERO']}"; read hide_token_cfg
     if [ "${hide_token_cfg,,}" == "y" ]; then
-        sed -i '0,/HIDE_TOKEN=1/s/HIDE_TOKEN=1/HIDE_TOKEN=1/' "$0"
+        sed -i '0,/HIDE_TOKEN=[0-9]/s/HIDE_TOKEN=0/HIDE_TOKEN=1/' "$0"
         echo -e "${colors['INIT_OPTION']}Hiding PAT token turned ON.${colors['ZERO']}"
         sleep 2
         break
     elif [ "${hide_token_cfg,,}" == "n" ]; then
-        sed -i '0,/HIDE_TOKEN=1/s/HIDE_TOKEN=1/HIDE_TOKEN=0/' "$0"
+        sed -i '0,/HIDE_TOKEN=[0-9]/s/HIDE_TOKEN=1/HIDE_TOKEN=0/' "$0"
         echo -e "${colors['INIT_OPTION']}Hiding PAT token turned OFF.${colors['ZERO']}"
         sleep 2
         break
@@ -57,21 +60,21 @@ init_config() {
     exit
 }
 
-# checking pass for pushing
-push_pass_check() {
-    repo_to_clone=$(git remote get-url origin)
-    domain=$repo_to_clone
+# handling password - detecting provider + adjusting link // 0 - pushing / 1(else) - cloning
+pass_handler() {
     validate_repo # validating repository
     if [ $ret_check -ne 0 ]; then
         # Checking if there is a password for repo
         # No password in output -> bad URL -> exit
         if [[ ! "$check" == *"Password"* && ! "$check" == *"Username"* ]]; then 
-            echo -e "${colors['WRONG_URL']}Error while checking remote branch!${colors['ZERO']}"
+            if [ $1 -eq 0 ]; then
+                echo -e "${colors['WRONG_URL']}Error while checking remote branch!${colors['ZERO']}"
+            else
+                echo -e "${colors['WRONG_URL']}You entered wrong repository URL!${colors['ZERO']}"
+            fi
             exit
         # There is a password to enter -> handling password
         else
-            echo -e "${colors['PASS_PROTECTED']}\nThis repo is password protected!${colors['ZERO']}"
-            pass_prompt
             # azure check
             if [[ "$repo_to_clone" == *"dev.azure"* ]]; then
                 # adjusting azure link
@@ -79,37 +82,63 @@ push_pass_check() {
                     domain=$(echo "$repo_to_clone" | sed 's/.*@dev\.azure\.com/@dev.azure.com/') # extracting domain name
                 else
                     domain="${repo_to_clone#https://}" # extracting domain name
-                    domain="@$repo_to_clone"
+                    domain="@$domain"
                 fi
-                check_pass $domain
-                if [ -n "$existing_pass" ]; then
+                if [ $1 -eq 1 ]; then
+                    echo -e "${colors['UNDERLINE']}${colors['AZURE_REPO']}Azure Repos${colors['ZERO']}${colors['REPO_DETECTED']} detected!${colors['ZERO']}\n"
+                    repo_name="${domain##*/}"
+                fi
+
+                # if AUTO_TOKEN ON
+                if [ $AUTO_TOKEN -eq 1 ]; then
+                    pass_prompt # prompting for password to pass-base
+                    pat_domain=$(echo "$domain" | cut -d'/' -f1-3)
+                    check_pass $pat_domain # checking if token for that domain exists
+                    if [ -n "$existing_pass" ]; then
                         repo_to_clone="https://$existing_pass$domain" # adjusting repo link
                         validate_repo # check if password is ok
                         if [ $ret_check -ne 0 ]; then
                             echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                            create_and_validate "azure"
+                            create_and_validate $domain "azure"
                         fi
+                    else
+                        echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
+                        create_and_validate $domain "azure"
+                    fi
                 else
-                    echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                    create_and_validate "azure"
+                # if AUTO_TOKEN OFF
+                    echo -en "${colors['CLONE_PASS']}Provide PAT token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s repo_patoken
+                    repo_to_clone="https://$repo_patoken$domain" # adjusting repo link
                 fi
             fi # github check
             if [[ "$repo_to_clone" == *"github"* ]]; then
                 domain="${repo_to_clone#https://}" # extracting domain name
-                rdomain=${domain%.git} # remove .git from end of string
+                domain=${domain%.git} # remove .git from end of string
                 domain="@$domain" # adjusting domain name
-                check_pass $domain
-                if [ -n "$existing_pass" ]; then
-                    repo_to_clone="https://$existing_pass$domain" # adjusting repo link
-                    validate_repo # check if password is ok
-                    if [ $ret_check -ne 0 ]; then
-                        echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                        echo $check
-                        create_and_validate "github"
+                if [ $1 -eq 1 ]; then
+                    echo -e "${colors['UNDERLINE']}${colors['GH_REPO']}GitHub repository${colors['ZERO']}${colors['REPO_DETECTED']} detected!${colors['ZERO']}\n"
+                    repo_name="${domain##*/}"
+                fi
+                # if AUTO_TOKEN ON
+                if [ $AUTO_TOKEN -eq 1 ]; then
+                    pass_prompt # prompting for password to pass-base
+                    check_pass $domain # checking if token for that domain exists
+                    if [ -n "$existing_pass" ]; then
+                        repo_to_clone="https://$existing_pass$domain" # adjusting repo link
+                        validate_repo # check if password is ok
+                        if [ $ret_check -ne 0 ]; then
+                            echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
+                            create_and_validate $domain "github"
+                        fi
+                    else
+                        echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
+                        create_and_validate $domain "github"
                     fi
                 else
-                    echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                    create_and_validate "github"
+                # if AUTO_TOKEN OFF
+                    echo -en "${colors['CLONE_USER']}Provide username${colors['ZERO']}: ${colors['URL_ADDR']}"; read repo_user # prompting for username
+                    echo -en "${colors['CLONE_PASS']}Provide PAT token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s repo_patoken # prompting for password
+                    repo_to_clone="https://$repo_user:$repo_patoken$domain" # adjusting repo link
                 fi
             fi
         fi
@@ -170,12 +199,12 @@ decrypt_pass() {
 create_and_validate() {
     # entry creation
     decrypt_pass # decrypting pass-base
-    if [ "$1" == "github" ]; then # github case
+    if [ "$2" == "github" ]; then # github case
         echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}username${colors['ZERO']}: ${colors['URL_ADDR']}"; read new_user
         echo -en "${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
         echo -e "\n${colors['ZERO']}"
         updated_pbase="$depbasepass\n($1) : [$new_user:$new_pass]"
-    elif [ "$1" == "azure" ]; then # azure case
+    elif [ "$2" == "azure" ]; then # azure case
         echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
         echo -e "\n${colors['ZERO']}"
         updated_pbase="$depbasepass\n($1) : [$new_pass]"
@@ -255,6 +284,7 @@ colors['PASS_PROTECTED']='\033[38;5;161m'
 colors['INIT_DONE']='\033[38;5;71m'
 colors['INIT_OPTION']='\033[38;5;72m'
 colors['INIT_QUEST']='\033[38;5;110m'
+colors['BRANCH_CLONE_SELECT']='\033[38;5;173m'
 
 # ========== Script initialization (adding alias) ==========
 if [ $# -gt 0 ]; then
@@ -318,12 +348,16 @@ if [ $? -eq 0 ]; then
     fi
     echo -e -n "\n${colors['ENTER_COMMIT']}Enter the commit message: ${colors['ZERO']}"; read commit_message
     echo -e "${colors['COMMIT_INFO']}"
-    git commit -m "$commit_message" # commit changes
-    if [ $AUTO_TOKEN -eq 1 ]; then
-        push_pass_check # check if there is a password to push repo
-    fi
+    git commit -m "$commit_message" # committing changes
+
+    # ========== Handling passwords ==========
+    repo_to_clone=$(git remote get-url origin)
+    domain=$repo_to_clone
+    pass_handler 0 # handling password - detecting provider + adjusting link
+
+    # ========== Pushing ==========
     if [ $? -eq 0 ]; then # if there is a new commit to push
-        git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null # checking if repo has a remote branch for current local branch
+        git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null 2>&1 # checking if repo has a remote branch for current local branch
         if [ $? -eq 0 ]; then
             echo -e "\n${colors['PUSHING']}Pushing. . .${colors['ZERO']}"
             git push $repo_to_clone # pushing normally
@@ -332,7 +366,7 @@ if [ $? -eq 0 ]; then
             git push -u $repo_to_clone $new_branch # pushing with new remote branch creation
         fi
     elif [ $? -eq 1 ]; then # if there are no new commits to push - pushing previous one
-        git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null # checking if repo has a remote branch for current local branch
+        git rev-parse --abbrev-ref --symbolic-full-name $new_branch@{upstream} > /dev/null 2>&1 # checking if repo has a remote branch for current local branch
         if [ $? -eq 0 ]; then
             echo -e "\n${colors['PUSHING']}Pushing previous commit. . .${colors['ZERO']}"
             git push $repo_to_clone # pushing normally
@@ -345,7 +379,7 @@ if [ $? -eq 0 ]; then
         exit
     fi
 
-# ============================== If directory is not git repo ==============================
+# ============================== If directory is NOT git repo ==============================
 else
     # Message with clone input option
     echo -en "\n${colors['DIR_NOT_REPO']}This directory is not a git repo.\n${colors['ZERO']}\n${colors['ENTER_REPO_CLONE']}Enter the ${colors['REPO_LINK']}<repo link>${colors['ENTER_REPO_CLONE']} to clone it here\n${colors['ZERO']}:${colors['URL_ADDR']}"; read repo_to_clone
@@ -355,108 +389,29 @@ else
         exit
     fi
     original_address=$repo_to_clone # rewrite og address
-    # ========== If repo URL for cloning entered ==========
+
+    # ========== Handling passwords ==========
     echo -e "${colors['ZERO']}"
-    # Validating repo URL v1
-    validate_repo
+    pass_handler 1 # handling password - detecting provider + adjusting link
 
-    # Validating repo URL v2
-    if [ $ret_check -ne 0 ]; then
-        # Checking if there is a password for repo
-
-        # No password in output -> bad URL -> exit
-        if [[ ! "$check" == *"Password"* && ! "$check" == *"Username"* ]]; then 
-            echo -e "${colors['WRONG_URL']}You entered wrong repository URL!${colors['ZERO']}"
-            exit
-        
-        # There is a password to enter -> handling password protected repo clone
-        else 
-            # checking if its a GITHUB repository
-            if [[ "$repo_to_clone" == *"github"* ]]; then
-                echo -e "${colors['UNDERLINE']}${colors['GH_REPO']}GitHub repository${colors['ZERO']}${colors['REPO_DETECTED']} detected!${colors['ZERO']}\n"
-                domain="${repo_to_clone#https://}" # extracting domain name
-                domain=${domain%.git} # remove .git from end of string
-                domain="@$domain" # adjusting domain name
-                repo_name="${domain##*/}"
-
-                # if AUTO_TOKEN ON
-                if [ $AUTO_TOKEN -eq 1 ]; then
-                    pass_prompt # prompting for password to pass-base
-                    check_pass $domain # checking if token for that domain exists
-                    if [ -n "$existing_pass" ]; then
-                        repo_to_clone="https://$existing_pass$domain" # adjusting repo link
-                        validate_repo # check if password is ok
-                        if [ $ret_check -ne 0 ]; then
-                            echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                            create_and_validate "github"
-                        fi
-                    else
-                        echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                        create_and_validate "github"
-                    fi
-                else
-                # if AUTO_TOKEN OFF
-                    echo -en "${colors['CLONE_USER']}Provide username${colors['ZERO']}: ${colors['URL_ADDR']}"; read repo_user # prompting for username
-                    echo -en "${colors['CLONE_PASS']}Provide PAT token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s repo_patoken # prompting for password
-                    repo_to_clone="https://$repo_user:$repo_patoken$domain" # adjusting repo link
-                fi
-            fi
-
-            # checking if its an AZURE repository
-            if [[ "$repo_to_clone" == *"dev.azure"* ]]; then
-                echo -e "${colors['UNDERLINE']}${colors['AZURE_REPO']}Azure Repos${colors['ZERO']}${colors['REPO_DETECTED']} detected!${colors['ZERO']}\n"
-
-                # adjusting azure link
-                if [[ "$repo_to_clone" == *"@dev.azure"* ]]; then
-                    domain=$(echo "$repo_to_clone" | sed 's/.*@dev\.azure\.com/@dev.azure.com/') # extracting domain name
-                    repo_name="${domain##*/}"
-                else
-                    domain="${repo_to_clone#https://}" # extracting domain name
-                    domain="@$domain"
-                    repo_name="${domain##*/}"
-                fi
-
-                # if AUTO_TOKEN ON
-                if [ $AUTO_TOKEN -eq 1 ]; then
-                    pass_prompt # prompting for password to pass-base
-                    pat_domain=$(echo "$domain" | cut -d'/' -f1-3)
-                    check_pass $pat_domain # checking if token for that domain exists
-                    if [ -n "$existing_pass" ]; then
-                        repo_to_clone="https://$existing_pass$domain" # adjusting repo link
-                        validate_repo # check if password is ok
-                        if [ $ret_check -ne 0 ]; then
-                            echo -en "${colors['ERROR_TOKEN']}Saved token is not working.${colors['ZERO']}"
-                            create_and_validate "azure"
-                        fi
-                    else
-                        echo -en "${colors['ERROR_TOKEN']}Entered address does not exist in ${colors['PASSBASE']}Pass-base${colors['ERROR_TOKEN']} file.${colors['ZERO']}"
-                        create_and_validate "azure"
-                    fi
-                else
-                # if AUTO_TOKEN OFF
-                    echo -en "${colors['CLONE_PASS']}Provide PAT token${colors['ZERO']}: ${colors['URL_ADDR']}"; read repo_patoken
-                    repo_to_clone="https://$repo_patoken$domain" # adjusting repo link
-                fi
-            fi
-        fi # if there is not password for repo just clone repo below
-    fi
-    # Final cloning repo with adjusted link
-    # selecting branch
+    # ========== Selecting branch ==========
     remote_branches=($(git ls-remote --heads -h $repo_to_clone | awk '{print $2}' | sed 's|refs/heads/||'))
-    items_per_column=$(((${#remote_branches[@]} + 1) / 2))
+    items_per_column=$((${#remote_branches[@]} / 2))
     echo -e "\n${colors['LIST_OF_BRANCHES']}${colors['UNDERLINE']}List of remote branches${colors['ZERO']}:${colors['BRANCH_HEAD']}"
-    printf "%-50s" "${remote_branches[0]}${remote_branches[1]}${remote_branches[2]}"
-    echo -e "${colors['BRANCH_REMOTE']}"; printf "%-50s %-50s\n" "${remote_branches[@]:3}" "${remote_branchess[@]:items_per_column + 3}"; echo -e "${colors['ZERO']}"
-    echo -en "Press <ENTER> for clone whole repo or type single branch to clone: "; read branch_to_clone
-    # cloning repo
+    echo -e "${colors['BRANCH_REMOTE']}"; printf "%-50s %-50s\n" "${remote_branches[@]}" "${remote_branchess[@]:items_per_column}"; echo -e "${colors['ZERO']}"
+    echo -en "${colors['BRANCH_CLONE_SELECT']}Press ${colors['BRANCH_INFO_HIGHL']}<ENTER>${colors['BRANCH_CLONE_SELECT']} for clone whole repo or type branch name to clone: ${colors['ZERO']}"; read branch_to_clone
+
+    # ========== Cloning repo ==========
     echo -e "${colors['URL_ADDR']}"
     if [ -n "$branch_to_clone" ]; then
         git clone $repo_to_clone --branch $branch_to_clone
     else
         git clone $repo_to_clone
     fi
+
+    # ========== Rewriting repo URL for safety reasons ==========
     if [ "$HIDE_TOKEN" -eq 1 ]; then
-        git -C "$repo_name" remote set-url origin $original_address # rewrite repo URL for safety reasons
+        git -C "$repo_name" remote set-url origin $original_address
     fi
     echo -e "${colors['ZERO']}"
     exit
