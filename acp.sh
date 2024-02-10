@@ -195,6 +195,7 @@ encrypt_pass() {
 # decrypting pass-base file
 decrypt_pass() {
     for ((i = 1; i <= 3; i++)); do
+        exec 3>&2
         echo -en "${colors['PROVIDE_PASS']}Please provide password for the ${colors['PASSBASE']}Pass-base${colors['PROVIDE_PASS']} file: ${colors['ZERO']}"; read -s pbasepass
         exec 2>/dev/null # supress errors (null byte fix)
         depbasepass=$(cat "$PASS_BASE_FILE" | openssl enc -d -aes-256-cbc -a -pbkdf2 -pass pass:"$pbasepass")
