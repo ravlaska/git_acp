@@ -91,8 +91,7 @@ pass_handler() {
 
                 # if AUTO_TOKEN ON
                 if [ $AUTO_TOKEN -eq 1 ]; then
-                    pass_prompt # prompting for password to pass-base
-                    pat_domain=$(echo "$domain" | cut -d'/' -f1-3)
+                    pat_domain=$(echo "$domain" | cut -d'/' -f1-3) # adjusting link for ADO Project-Scope access
                     check_pass $pat_domain # checking if token for that domain exists
                     if [ -n "$existing_pass" ]; then
                         repo_to_clone="https://$existing_pass$domain" # adjusting repo link
@@ -115,14 +114,21 @@ pass_handler() {
                 domain="${repo_to_clone#https://}" # extracting domain name
                 domain=${domain%.git} # remove .git from end of string
                 domain="@$domain" # adjusting domain name
+
+                # checking if github repository is Github or Github Enterprise
+                if [[ "$domain" == *"github.com"* ]]; then
+                    pat_domain=$(echo "$domain" | cut -d'/' -f1-2) # adjust link for Github User Scope
+                else
+                    pat_domain=$(echo "$domain" | cut -d'/' -f1) # adjust link for Github Enterprise Scope
+                fi
+                
                 if [ $1 -eq 1 ]; then
                     echo -e "${colors['UNDERLINE']}${colors['GH_REPO']}GitHub repository${colors['ZERO']}${colors['REPO_DETECTED']} detected!${colors['ZERO']}\n"
                     repo_name="${domain##*/}"
                 fi
                 # if AUTO_TOKEN ON
                 if [ $AUTO_TOKEN -eq 1 ]; then
-                    pass_prompt # prompting for password to pass-base
-                    check_pass $domain # checking if token for that domain exists
+                    check_pass $pat_domain # checking if token for that domain exists
                     if [ -n "$existing_pass" ]; then
                         repo_to_clone="https://$existing_pass$domain" # adjusting repo link
                         validate_repo # check if password is ok
@@ -188,11 +194,20 @@ encrypt_pass() {
 
 # decrypting pass-base file
 decrypt_pass() {
-    depbasepass=$(cat "$PASS_BASE_FILE" | openssl enc -d -aes-256-cbc -a -pbkdf2 -pass pass:"$pbasepass")
-    if [ $? -ne 0 ]; then
-        echo -e "${colors['ERROR_TOKEN']}Bad password for Pass-Base file!!!${colors['ZERO']}"
-        exit
-    fi
+    for ((i = 1; i <= 3; i++)); do
+        echo -en "${colors['PROVIDE_PASS']}Please provide password for the ${colors['PASSBASE']}Pass-base${colors['PROVIDE_PASS']} file: ${colors['ZERO']}"; read -s pbasepass
+        exec 2>/dev/null # supress errors (null byte fix)
+        depbasepass=$(cat "$PASS_BASE_FILE" | openssl enc -d -aes-256-cbc -a -pbkdf2 -pass pass:"$pbasepass")
+        dec_ret=$?
+        exec 2>&3 # turning off errors supression
+        if [ $dec_ret -ne 0 ]; then
+            echo -e "${colors['ERROR_TOKEN']}\nBad password for Pass-Base file! Try again. ${colors['ZERO']}\n"
+        else
+            echo ""
+            return
+        fi
+    done
+    exit
 }
 
 # create and validate token entry
@@ -234,12 +249,6 @@ check_pass() {
     decrypt_pass
     adjusted_search_domain=$(echo "$1" | sed 's/[./]/\\&/g')
     existing_pass=$(echo -e "$depbasepass" | grep $adjusted_search_domain | awk -F'[][]' '{print $2}')
-}
-
-# prompting for password
-pass_prompt() {
-    echo -en "${colors['PROVIDE_PASS']}Please provide password for the ${colors['PASSBASE']}Pass-base${colors['PROVIDE_PASS']} file: ${colors['ZERO']}"; read -s pbasepass
-    echo -e "\n"
 }
 
 # ========== Colors array definition ==========
