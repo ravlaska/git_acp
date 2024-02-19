@@ -214,7 +214,7 @@ decrypt_pass() {
 # create and validate token entry
 create_and_validate() {
     # entry creation
-    decrypt_pass # decrypting pass-base
+    # decrypt_pass # decrypting pass-base
     if [ "$2" == "github" ]; then # github case
         echo -en "\n${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}username${colors['ZERO']}: ${colors['URL_ADDR']}"; read new_user
         echo -en "${colors['PROVIDE_TOKEN']}Provide ${colors['PROVIDE_TOKEN_HIGH']}token${colors['ZERO']}: ${colors['URL_ADDR']}"; read -s new_pass
