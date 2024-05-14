@@ -76,7 +76,7 @@ pass_handler() {
         # There is a password to enter -> handling password
         else
             # azure check
-            if [[ "$repo_to_clone" == *"dev.azure"* ]]; then
+            if [[ "$repo_to_clone" == *"dev.azure"* ]] || [[ "$repo_to_clone" == *"visualstudio.com"* ]]; then
                 # adjusting azure link
                 if [[ "$repo_to_clone" == *"@dev.azure"* ]]; then
                     domain=$(echo "$repo_to_clone" | sed 's/.*@dev\.azure\.com/@dev.azure.com/') # extracting domain name
